@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Japan Oct 2026</title>
+<style>
+  :root { --line:#e2e2e2; --muted:#777; --bg:#fff; --accent:#1a56b0; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; margin:0; color:#111; background:#f5f5f4; -webkit-text-size-adjust:100%; }
+  main { max-width:640px; margin:0 auto; padding:16px; }
+  header { margin-bottom:14px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:14px; }
+  .flights { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  .flights span { font-size:12px; background:#eef2fb; color:var(--accent); padding:4px 10px; border-radius:6px; }
+  .status { position:sticky; top:0; z-index:5; background:#f5f5f4; padding:8px 0 6px; font-size:13px; color:var(--muted); display:flex; align-items:center; gap:7px; }
+  .dot { width:9px; height:9px; border-radius:50%; background:#bbb; flex-shrink:0; }
+  .dot.ok { background:#2a9d5b; }
+  .dot.saving { background:#e0a500; }
+  .dot.off { background:#c0392b; }
+  .day { background:var(--bg); border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:12px; }
+  .dhead { display:flex; align-items:baseline; gap:8px; margin-bottom:2px; }
+  .dcount { font-size:11px; font-weight:700; color:#fff; background:var(--accent); border-radius:5px; padding:2px 7px; flex-shrink:0; }
+  .dtag { font-size:12px; font-weight:600; }
+  .dcity { font-size:13px; color:var(--muted); }
+  .dtitle { font-size:15px; font-weight:600; margin:2px 0; }
+  .dnote { font-size:13px; color:var(--muted); margin:0 0 10px; outline:none; border-radius:6px; padding:2px 4px; margin-left:-4px; }
+  .dnote:focus { color:#111; background:#f7f9fd; box-shadow:0 0 0 1px var(--accent) inset; }
+  .dnote.empty { color:#bbb; font-style:italic; }
+  .list { min-height:4px; }
+  .row { display:flex; align-items:center; gap:6px; padding:8px 10px; border:1px solid var(--line); border-radius:8px; margin-bottom:6px; background:#fff; touch-action:pan-y; }
+  .row.hotel { background:#fafaf9; }
+  .row.drag { opacity:.4; }
+  .row.over { border-color:var(--accent); border-style:dashed; }
+  .grip { color:#bbb; font-size:15px; cursor:grab; flex-shrink:0; padding:0 2px; touch-action:none; user-select:none; }
+  .time { font-size:12px; color:var(--accent); background:#eef2fb; border:none; border-radius:5px; padding:3px 6px; width:62px; flex-shrink:0; font-family:inherit; }
+  .time.unset { color:#aaa; background:#f0f0ef; }
+  .txt { flex:1; outline:none; min-width:0; }
+  .txt.empty { color:#aaa; }
+  .txt:focus { color:#111; }
+  .del { color:#c00; background:none; border:none; font-size:18px; line-height:1; cursor:pointer; padding:0 4px; opacity:.5; flex-shrink:0; }
+  .del:hover { opacity:1; }
+  .add { font-size:13px; color:var(--accent); background:none; border:none; cursor:pointer; padding:4px 0; }
+  .bar { display:flex; gap:8px; flex-wrap:wrap; margin:16px 0 40px; }
+  .bar button { flex:1; min-width:96px; font-size:13px; font-weight:600; color:var(--accent); background:#eef2fb; border:1px solid #dbe4f6; border-radius:8px; padding:10px 8px; cursor:pointer; }
+  .bar button:active { background:#e2e9f8; }
+  .loading { text-align:center; padding:48px 20px; color:var(--muted); }
+  @media print {
+    .bar,.status,.grip,.del,.add { display:none !important; }
+    body { background:#fff; }
+    .row { border-color:#ccc; page-break-inside:avoid; }
+    .day { border-color:#ccc; page-break-inside:avoid; }
+    .time { background:none; padding:0; width:auto; -webkit-appearance:none; appearance:none; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Japan &middot; 16&ndash;24 Oct 2026</h1>
+    <div class="sub">5 pax &middot; Tokyo &rarr; Kyoto &rarr; Osaka (open-jaw)</div>
+    <div class="flights">
+      <span>&#9992; Scoot &rarr; HND &middot; 17 Oct 01:05</span>
+      <span>&#9992; Peach &larr; KIX &middot; 24 Oct 18:25</span>
+    </div>
+  </header>
+  <div class="status"><span class="dot" id="dot"></span><span id="statusTxt">Loading&hellip;</span></div>
+  <div id="days"><div class="loading">Loading the trip&hellip;</div></div>
+  <div class="bar">
+    <button onclick="window.print()">&#128424; Print / Save PDF</button>
+  </div>
+</main>
+<script>
+/* ============================================================
+   CONFIG — paste your Google Apps Script Web App URL here.
+   It must end in /exec  (see Code.gs setup notes).
+   Leave as-is to run offline-only on this one device.
+   ============================================================ */
+const API_URL = "PASTE_YOUR_WEB_APP_URL_HERE";
+
+const CLOUD = API_URL.indexOf("http") === 0;
+const POLL_MS = 8000;
+const HOTEL_LABEL = {tokyo:"Tokyo lodging",kyoto:"Kyoto lodging",osaka:"Osaka lodging"};
+
+/* Default itinerary — used the very first time the cloud sheet is empty. */
+const DEFAULT = {"v":2,"days":[{"d":"Fri 16","c":"Transit","col":"#888","t":"Night flight SIN → Tokyo","n":"Scoot TR, depart 17:15. No stops.","places":[],"hotel":null},{"d":"Sat 17","c":"Tokyo","col":"#1a56b0","t":"Land 01:05 · recovery day (Shibuya cluster)","n":"Lodge: Shibuya/Shinjuku — central, on JR loop, easy for a slow day. All stops within 15 min walk/train.","places":[["Sleep in / late checkout breakfast","11:00"],["Shibuya Crossing + Hachiko statue","14:00"],["Shibuya Sky observation (5 min from crossing)","15:30"],["Miyashita Park / Center-gai shopping (walk)","17:00"],["Dinner: conveyor-belt sushi, Shibuya","18:30"]],"hotel":"tokyo"},{"d":"Sun 18","c":"Tokyo","col":"#1a56b0","t":"Asakusa + bayside (2 clusters, 1 hop)","n":"Lodge: Shibuya/Shinjuku (same base all Tokyo). Morning = Asakusa cluster (all walkable); ONE 40-min hop to Toyosu after lunch, then stay bayside for dinner.","places":[["Senso-ji Temple + Nakamise street, Asakusa","09:00"],["Tokyo Skytree (walk/1 stop from Asakusa)","11:00"],["Lunch in Asakusa","13:00"],["→ teamLab Planets, Toyosu (40 min, pre-book)","15:00"],["Dinner + shopping, Toyosu/Odaiba (stay bayside)","18:00"]],"hotel":"tokyo"},{"d":"Mon 19","c":"Fuji","col":"#1a56b0","t":"Mt Fuji day trip (district — long hop OK)","n":"Lodge: keep Tokyo room. Kawaguchiko is ~2hr each way — the sanctioned long hop. Once there, all stops within 20 min. Check Fuji visibility on the 17th; swap if cloudy.","places":[["Depart hotel (bus/train to Kawaguchiko ~2h)","07:30"],["Chureito Pagoda (classic Fuji photo)","10:30"],["Lake Kawaguchiko + lunch (10 min)","12:30"],["Oshino Hakkai village (15 min)","14:30"],["Return to Tokyo (~2h)","16:30"]],"hotel":"tokyo"},{"d":"Tue 20","c":"Tokyo","col":"#b03a7a","t":"DisneySea (full day, single site)","n":"Lodge: Tokyo. Consider a Bay-area hotel (Maihama) ONLY if you want to sleep next to the park; otherwise stay central, it's 25 min by train. Pre-buy dated tickets + Premier Access.","places":[["Tokyo DisneySea","08:30"]],"hotel":"tokyo"},{"d":"Wed 21","c":"Kyoto","col":"#0f8a6a","t":"Shinkansen + south Kyoto cluster","n":"Lodge: Kyoto — near Kyoto Station or Gion/Kawaramachi. Fushimi Inari is 5 min south of station by train; Nishiki/Gion are central. All within 20 min. Fuji-side = right seat westbound.","places":[["Shinkansen Tokyo → Kyoto (~2h15)","09:30"],["Drop bags at Kyoto hotel","12:30"],["Fushimi Inari shrine (5 min train from station)","14:00"],["Nishiki Market food street (central)","17:00"],["Dinner: Gion / Pontocho alley (walk)","19:00"]],"hotel":"kyoto"},{"d":"Thu 22","c":"Kyoto","col":"#0f8a6a","t":"West Kyoto: Arashiyama + Kinkaku-ji","n":"Lodge: Kyoto (same base). Arashiyama → Kinkaku-ji is ~30 min; both northwest, so this stays a tight cluster. Jidai Matsuri parade + Kurama Fire Festival tonight = big crowds & road closures downtown — keep evening loose. SWAP OPTION: replace this whole day with the Nara day-trip below if you prefer deer over temples.","places":[["Arashiyama Bamboo Grove (go early)","08:30"],["Tenryu-ji + monkey park / rickshaw (walk)","10:00"],["Lunch in Arashiyama","12:30"],["→ Kinkaku-ji, Golden Pavilion (~30 min)","14:30"],["Ryoan-ji zen garden (10 min from Kinkaku-ji)","16:00"],["Optional: catch tail of Jidai Matsuri downtown","17:30"]],"hotel":"kyoto"},{"d":"Fri 23","c":"Osaka","col":"#b07514","t":"Move to Osaka + Minami cluster","n":"Lodge: Osaka — Namba/Shinsaibashi. Castle is a 15-min hop out and back; everything else (shopping, Dotonbori) is walkable in Minami. Dotonbori at night = teens' highlight.","places":[["Train Kyoto → Osaka, drop bags (~30 min)","10:00"],["Osaka Castle + park (15 min from Namba)","11:30"],["→ back to Namba, lunch: Osaka street food","13:30"],["Shopping: Shinsaibashi / Amerikamura (walk)","15:00"],["Dotonbori: Glico sign, takoyaki, neon (walk)","18:30"]],"hotel":"osaka"},{"d":"Sat 24","c":"Osaka","col":"#b07514","t":"Last morning → KIX","n":"Lodge: Osaka (checkout). Kuromon Market is 10 min from Namba. Peach 18:25, at airport ~15:30.","places":[["Last shopping / Kuromon Ichiba market (10 min)","09:30"],["Lunch + pack near hotel","12:30"],["Head to KIX (Nankai/train ~50 min)","14:00"]],"hotel":null}],"hotels":{"tokyo":"Shibuya or Shinjuku — central, on the JR Yamanote loop, walkable nightlife","kyoto":"Near Kyoto Station or Gion/Kawaramachi — central for shrines + food","osaka":"Namba / Shinsaibashi (Minami) — walk to Dotonbori, direct train to KIX"}};
+
+/* ---------------- state ---------------- */
+let trip = null;
+let version = 0;         // version we last synced with the cloud
+let saving = false;
+let saveTimer = null;
+
+const days = document.getElementById("days");
+
+/* ---------------- local cache (offline safety) ---------------- */
+function cacheLocal(){
+  try{ localStorage.setItem("japan26", JSON.stringify(trip)); localStorage.setItem("japan26_v", String(version)); }catch(e){}
+}
+function loadLocal(){
+  try{ const t=JSON.parse(localStorage.getItem("japan26")); return valid(t)?t:null; }catch(e){ return null; }
+}
+function valid(t){ return t && t.v===2 && Array.isArray(t.days) && t.days.length>0; }
+
+/* ---------------- cloud ---------------- */
+function setStatus(cls, txt){
+  document.getElementById("dot").className = "dot " + (cls||"");
+  document.getElementById("statusTxt").textContent = txt;
+}
+async function fetchRemote(){
+  const res = await fetch(API_URL, {method:"GET"});
+  return await res.json();
+}
+async function pushRemote(){
+  if(!CLOUD){ cacheLocal(); setStatus("ok","Saved on this device"); return; }
+  saving = true; setStatus("saving","Saving…");
+  try{
+    const res = await fetch(API_URL, {
+      method:"POST",
+      headers:{"Content-Type":"text/plain;charset=utf-8"}, // text/plain avoids CORS preflight
+      body: JSON.stringify({baseVersion:version, data:trip})
+    });
+    const out = await res.json();
+    if(out.ok){
+      version = out.version; cacheLocal(); setStatus("ok","Saved · everyone can see this");
+    } else if(out.conflict){
+      // Someone else saved first — take their latest so we don't clobber it.
+      trip = out.data || trip; version = out.version; cacheLocal(); render();
+      setStatus("ok","Updated with a family member's change");
+    } else {
+      setStatus("off","Couldn't save — will retry"); scheduleRetry();
+    }
+  }catch(e){
+    setStatus("off","Offline — changes saved on this device, will retry"); cacheLocal(); scheduleRetry();
+  }finally{ saving = false; }
+}
+let retryTimer=null;
+function scheduleRetry(){ clearTimeout(retryTimer); retryTimer=setTimeout(pushRemote, 5000); }
+
+function queueSave(){
+  if(!CLOUD){ cacheLocal(); return; }
+  setStatus("saving","Saving…");
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(pushRemote, 600);
+}
+
+/* poll for other people's changes */
+function editingNow(){
+  const el = document.activeElement;
+  return el && (el.isContentEditable || el.tagName==="INPUT") && days.contains(el);
+}
+async function poll(){
+  if(!CLOUD || saving || editingNow() || dragSrc) return;
+  try{
+    const out = await fetchRemote();
+    if(out && out.ok && out.version > version){
+      trip = out.data; version = out.version; cacheLocal(); render();
+      setStatus("ok","Updated with the latest changes");
+    }
+  }catch(e){ /* keep quiet; next poll retries */ }
+}
+
+/* ---------------- init ---------------- */
+async function init(){
+  if(!CLOUD){
+    trip = loadLocal() || JSON.parse(JSON.stringify(DEFAULT));
+    render(); setStatus("ok","Saved on this device only (no link set up)");
+    return;
+  }
+  try{
+    const out = await fetchRemote();
+    if(out && out.ok){
+      if(out.data){ trip = out.data; version = out.version; }
+      else {         // first ever load — seed the cloud with the default trip
+        trip = JSON.parse(JSON.stringify(DEFAULT)); version = 0;
+        render(); await pushRemote(); cacheLocal();
+        setStatus("ok","Ready · shared with your family");
+        setInterval(poll, POLL_MS); return;
+      }
+      cacheLocal(); render(); setStatus("ok","Ready · shared with your family");
+    } else {
+      trip = loadLocal() || JSON.parse(JSON.stringify(DEFAULT)); render();
+      setStatus("off","Couldn't reach the shared copy — showing last saved");
+    }
+  }catch(e){
+    trip = loadLocal() || JSON.parse(JSON.stringify(DEFAULT)); render();
+    setStatus("off","Offline — showing last saved on this device");
+  }
+  setInterval(poll, POLL_MS);
+}
+
+/* ---------------- render ---------------- */
+function render(){
+  days.innerHTML = trip.days.map((day,di)=>{
+    const rows = day.places.map((p,pi)=>row(p,di,pi)).join("");
+    const addBtn = day.hotel!==undefined ? `<button class="add" onclick="addPlace(${di})">+ Add place</button>` : "";
+    const hotel = day.hotel ? hotelRow(day.hotel) : "";
+    return `<div class="day">
+      <div class="dhead"><span class="dcount">Day ${di+1}</span><span class="dtag" style="color:${day.col}">${day.d}</span><span class="dcity">${day.c}</span></div>
+      <div class="dtitle">${day.t}</div>
+      <div class="dnote ${day.n?"":"empty"}" contenteditable data-note="${di}">${day.n?esc(day.n):"Add a note"}</div>
+      <div class="list" data-di="${di}">${rows}</div>${addBtn}
+      ${hotel}
+    </div>`;
+  }).join("");
+  bindDrag();
+}
+function esc(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;"); }
+function row(p,di,pi){
+  const [name,time]=p;
+  return `<div class="row" data-di="${di}" data-pi="${pi}">
+    <span class="grip" aria-label="Drag">&#8942;&#8942;</span>
+    <input class="time ${time?"":"unset"}" type="time" value="${time}" data-di="${di}" data-pi="${pi}" aria-label="Time">
+    <span class="txt ${name?"":"empty"}" contenteditable data-di="${di}" data-pi="${pi}">${name?esc(name):"Add a place"}</span>
+    <button class="del" onclick="delPlace(${di},${pi})" aria-label="Delete">&times;</button>
+  </div>`;
+}
+function hotelRow(key){
+  const val=trip.hotels[key];
+  return `<div class="row hotel">
+    <span class="grip" style="visibility:hidden">&#8942;&#8942;</span>
+    <span class="ico" style="color:var(--muted);font-size:13px">&#127976;</span>
+    <span class="txt ${val?"":"empty"}" contenteditable data-hotel="${key}">${val?esc(val):HOTEL_LABEL[key]}</span>
+  </div>`;
+}
+
+/* ---------------- editing ---------------- */
+days.addEventListener("focusin", e=>{
+  const el=e.target;
+  if((el.classList.contains("txt")||el.classList.contains("dnote")) && el.classList.contains("empty")){ el.textContent=""; el.classList.remove("empty"); }
+});
+days.addEventListener("focusout", e=>{
+  const el=e.target;
+  const v=el.textContent.trim();
+  if(el.classList.contains("dnote")){
+    trip.days[el.dataset.note].n=v; queueSave();
+    if(!v) render();
+    return;
+  }
+  if(!el.classList.contains("txt")) return;
+  if(el.dataset.hotel){ trip.hotels[el.dataset.hotel]=v; }
+  else { trip.days[el.dataset.di].places[el.dataset.pi][0]=v; }
+  queueSave();
+  if(!v) render();
+});
+days.addEventListener("change", e=>{
+  const el=e.target;
+  if(!el.classList.contains("time")) return;
+  const day=trip.days[el.dataset.di];
+  day.places[el.dataset.pi][1]=el.value;
+  day.places.sort((a,b)=>(a[1]||"99").localeCompare(b[1]||"99"));
+  queueSave(); render();
+});
+
+function addPlace(di){ trip.days[di].places.push(["",""]); queueSave(); render(); }
+function delPlace(di,pi){ trip.days[di].places.splice(pi,1); queueSave(); render(); }
+
+/* ---------------- drag to reorder ---------------- */
+let dragSrc=null;
+function bindDrag(){
+  days.querySelectorAll(".grip").forEach(g=>{
+    g.onpointerdown=e=>{
+      const rowEl=g.closest(".row");
+      if(rowEl.classList.contains("hotel")) return;
+      e.preventDefault();
+      dragSrc=rowEl; rowEl.classList.add("drag");
+      const move=ev=>{
+        const t=document.elementFromPoint(ev.clientX,ev.clientY);
+        const over=t&&t.closest(".row");
+        days.querySelectorAll(".over").forEach(x=>x.classList.remove("over"));
+        if(over&&over!==dragSrc&&!over.classList.contains("hotel")) over.classList.add("over");
+      };
+      const up=ev=>{
+        document.removeEventListener("pointermove",move);
+        document.removeEventListener("pointerup",up);
+        const t=document.elementFromPoint(ev.clientX,ev.clientY);
+        const tgt=t&&t.closest(".row");
+        if(tgt&&tgt!==dragSrc&&!tgt.classList.contains("hotel")) drop(dragSrc,tgt);
+        dragSrc=null; render();
+      };
+      document.addEventListener("pointermove",move);
+      document.addEventListener("pointerup",up);
+    };
+  });
+}
+function drop(src,tgt){
+  const sd=+src.dataset.di, sp=+src.dataset.pi, td=+tgt.dataset.di, tp=+tgt.dataset.pi;
+  const [item]=trip.days[sd].places.splice(sp,1);
+  trip.days[td].places.splice(tp,0,item);
+  queueSave();
+}
+
+init();
+</script>
+</body>
+</html>
